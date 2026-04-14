@@ -425,6 +425,18 @@
           });
         };
 
+        const normalizeImagePath = (path) => {
+          const trimmed = String(path || "").trim();
+          if (!trimmed) {
+            return "";
+          }
+          if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+            return trimmed;
+          }
+          const cleaned = trimmed.replace(/^\.?\//, "");
+          return `/${cleaned}`;
+        };
+
         const renderImages = (images, container) => {
           if (!images || images.length === 0) {
             return;
@@ -435,15 +447,16 @@
           container.appendChild(label);
 
           images.forEach((path) => {
+            const resolvedPath = normalizeImagePath(path);
             const img = document.createElement("img");
             img.className = "diagram";
             img.loading = "lazy";
-            img.src = path;
+            img.src = resolvedPath;
             img.alt = "Problem diagram";
             img.addEventListener("error", () => {
               const error = document.createElement("div");
               error.className = "meta";
-              error.textContent = `Image failed to load: ${path}`;
+              error.textContent = `Image failed to load: ${resolvedPath}`;
               container.appendChild(error);
               img.remove();
             });

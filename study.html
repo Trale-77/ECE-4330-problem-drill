@@ -57,7 +57,7 @@
         margin-top: 22px;
         display: grid;
         gap: 16px;
-        grid-template-columns: minmax(220px, 320px) minmax(220px, 320px) 1fr;
+        grid-template-columns: minmax(220px, 320px) minmax(220px, 320px) minmax(220px, 320px) 1fr;
         align-items: end;
       }
 
@@ -194,12 +194,23 @@
         font-style: italic;
       }
 
+      .solution-text.muted {
+        color: var(--muted);
+        font-style: italic;
+      }
+
       .diagram-label {
         margin: 10px 0 6px;
         color: var(--muted);
         font-size: 0.88rem;
         text-transform: uppercase;
         letter-spacing: 0.08em;
+      }
+
+      .scan-note {
+        margin: 8px 0 10px;
+        color: var(--muted);
+        font-size: 0.95rem;
       }
 
       .diagram {
@@ -300,6 +311,15 @@
             <div class="dropdown-menu" id="categoryMenu" role="listbox" aria-hidden="true"></div>
           </div>
 
+          <div class="field dropdown" id="sourceItemDropdown">
+            <label for="sourceItemButton">Exam / Assignment</label>
+            <button class="dropdown-trigger" id="sourceItemButton" type="button" aria-expanded="false">
+              <span id="sourceItemLabel">All</span>
+              <span aria-hidden="true">▾</span>
+            </button>
+            <div class="dropdown-menu" id="sourceItemMenu" role="listbox" aria-hidden="true"></div>
+          </div>
+
           <div class="field">
             <label>Data Source</label>
             <div class="data-source">Loaded from <code>output/problems.json</code></div>
@@ -318,8 +338,10 @@
           problems: [],
           topics: ["All"],
           categories: ["All"],
+          sourceItems: ["All"],
           currentTopic: "All",
           currentCategory: "All",
+          currentSourceItem: "All",
         };
 
         const statusEl = document.getElementById("status");
@@ -332,6 +354,10 @@
         const categoryButton = document.getElementById("categoryButton");
         const categoryMenu = document.getElementById("categoryMenu");
         const categoryLabel = document.getElementById("categoryLabel");
+        const sourceItemDropdown = document.getElementById("sourceItemDropdown");
+        const sourceItemButton = document.getElementById("sourceItemButton");
+        const sourceItemMenu = document.getElementById("sourceItemMenu");
+        const sourceItemLabel = document.getElementById("sourceItemLabel");
 
         if (
           !dropdownEl ||
@@ -341,7 +367,11 @@
           !categoryDropdown ||
           !categoryMenu ||
           !categoryButton ||
-          !categoryLabel
+          !categoryLabel ||
+          !sourceItemDropdown ||
+          !sourceItemMenu ||
+          !sourceItemButton ||
+          !sourceItemLabel
         ) {
           console.error("Topic dropdown elements not found.");
           statusEl.textContent = "UI error: dropdown elements missing.";
@@ -408,6 +438,85 @@
           state.categories = ["All", ...Array.from(found).sort()];
         };
 
+        const SOURCE_ITEM_ORDER = [
+          "Assignment 1",
+          "Assignment 2",
+          "Assignment 3",
+          "Assignment 4",
+          "Assignment 5",
+          "Assignment 6",
+          "Assignment 7",
+          "Assignment 8",
+          "Assignment 9",
+          "Assignment 10",
+          "Exam 1",
+          "Exam 2",
+          "Exam 3",
+          "Final",
+        ];
+
+        const getSourceItem = (source) => {
+          const text = String(source || "").trim();
+
+          const assignmentMatch = text.match(/^Assignment\s+(\d+)/i);
+          if (assignmentMatch) {
+            return `Assignment ${assignmentMatch[1]}`;
+          }
+
+          if (/^Assignment 5 Extra/i.test(text)) {
+            return "Assignment 5";
+          }
+
+          if (/^Linear Exam 1 Review/i.test(text) || /^Test 1 Sample/i.test(text)) {
+            return "Exam 1";
+          }
+
+          if (/^Exam 2\b/i.test(text) || /^Test 2 Sample/i.test(text)) {
+            return "Exam 2";
+          }
+
+          if (/^Exam 3\b/i.test(text) || /^Test 3 Sample/i.test(text)) {
+            return "Exam 3";
+          }
+
+          if (/^Final Sample/i.test(text)) {
+            return "Final";
+          }
+
+          return "Other";
+        };
+
+        const buildSourceItems = () => {
+          const found = new Set();
+          state.problems.forEach((problem) => {
+            const categoryMatch =
+              state.currentCategory === "All" ||
+              getCategory(problem.source) === state.currentCategory;
+            if (categoryMatch) {
+              found.add(getSourceItem(problem.source));
+            }
+          });
+          const ordered = Array.from(found).sort((a, b) => {
+            const aIndex = SOURCE_ITEM_ORDER.indexOf(a);
+            const bIndex = SOURCE_ITEM_ORDER.indexOf(b);
+            if (aIndex === -1 && bIndex === -1) {
+              return a.localeCompare(b);
+            }
+            if (aIndex === -1) {
+              return 1;
+            }
+            if (bIndex === -1) {
+              return -1;
+            }
+            return aIndex - bIndex;
+          });
+          state.sourceItems = ["All", ...ordered];
+          if (!state.sourceItems.includes(state.currentSourceItem)) {
+            state.currentSourceItem = "All";
+            sourceItemLabel.textContent = "All";
+          }
+        };
+
         const populateMenu = (menuEl, items, currentValue, onSelect) => {
           menuEl.innerHTML = "";
           items.forEach((itemValue) => {
@@ -425,6 +534,8 @@
           });
         };
 
+        const ASSET_VERSION = "20260426-1";
+
         const normalizeImagePath = (path) => {
           const trimmed = String(path || "").trim();
           if (!trimmed) {
@@ -434,16 +545,17 @@
             return trimmed;
           }
           const cleaned = trimmed.replace(/^\.?\//, "");
-          return `/${cleaned}`;
+          const separator = cleaned.includes("?") ? "&" : "?";
+          return `/${cleaned}${separator}v=${ASSET_VERSION}`;
         };
 
-        const renderImages = (images, container) => {
+        const renderImages = (images, container, labelText = "Diagram") => {
           if (!images || images.length === 0) {
             return;
           }
           const label = document.createElement("div");
           label.className = "diagram-label";
-          label.textContent = "Diagram";
+          label.textContent = labelText;
           container.appendChild(label);
 
           images.forEach((path) => {
@@ -472,7 +584,10 @@
             const categoryMatch =
               state.currentCategory === "All" ||
               getCategory(problem.source) === state.currentCategory;
-            return topicMatch && categoryMatch;
+            const sourceItemMatch =
+              state.currentSourceItem === "All" ||
+              getSourceItem(problem.source) === state.currentSourceItem;
+            return topicMatch && categoryMatch && sourceItemMatch;
           });
 
           if (filtered.length === 0) {
@@ -505,10 +620,14 @@
             header.appendChild(tag);
             card.appendChild(header);
 
+            const rawProblem = escapeText(problem.problem || "").trim();
+            const problemTextBad = Boolean(problem.problem_text_bad && problem.problem_scan);
             const text = document.createElement("div");
             text.className = "problem-text";
-            const rawProblem = escapeText(problem.problem || "").trim();
-            if (!rawProblem) {
+            if (problemTextBad) {
+              text.textContent = "Formatted math is shown in the exact problem scan below.";
+              text.classList.add("muted");
+            } else if (!rawProblem) {
               text.textContent = (problem.images || []).length
                 ? "Problem statement is shown in the diagram."
                 : "Problem statement not found.";
@@ -518,6 +637,14 @@
             }
             card.appendChild(text);
 
+            if (problemTextBad && problem.problem_scan) {
+              const note = document.createElement("div");
+              note.className = "scan-note";
+              note.textContent = "Exact problem scan:";
+              card.appendChild(note);
+              renderImages([problem.problem_scan], card, "Problem Scan");
+            }
+
             renderImages(problem.images || [], card);
 
             const actions = document.createElement("div");
@@ -526,7 +653,7 @@
             const solutionBtn = document.createElement("button");
             solutionBtn.type = "button";
             solutionBtn.className = "btn primary";
-            solutionBtn.textContent = problem.has_solution ? "Show solution" : "No solution";
+            solutionBtn.textContent = problem.has_solution ? "Show solution / work" : "No solution";
             solutionBtn.disabled = !problem.has_solution;
 
             const solutionBox = document.createElement("div");
@@ -534,15 +661,40 @@
 
             const solutionText = document.createElement("div");
             solutionText.className = "solution-text";
-            solutionText.textContent = escapeText(problem.solution || "Solution not available.");
+            const rawSolution = escapeText(problem.solution || "").trim();
+            const solutionTextBad = Boolean(problem.solution_text_bad && problem.solution_scan);
+            if (solutionTextBad) {
+              solutionText.textContent = "Formatted solution is shown in the exact solution scan below.";
+              solutionText.classList.add("muted");
+            } else if (!rawSolution) {
+              solutionText.textContent = (problem.solution_images || []).length
+                ? "Solution is shown in the diagram."
+                : "Solution not available.";
+              solutionText.classList.add("muted");
+            } else {
+              solutionText.textContent = rawSolution;
+            }
             solutionBox.appendChild(solutionText);
 
-            renderImages(problem.solution_images || [], solutionBox);
+            if (problem.solution_scan && (solutionTextBad || !rawSolution)) {
+              const solutionNote = document.createElement("div");
+              solutionNote.className = "scan-note";
+              solutionNote.textContent = "Exact solution scan:";
+              solutionBox.appendChild(solutionNote);
+              renderImages([problem.solution_scan], solutionBox, "Solution Scan");
+            }
+
+            const extraSolutionImages = (problem.solution_images || []).filter(
+              (path) => path !== problem.solution_scan
+            );
+            if (solutionTextBad || !rawSolution) {
+              renderImages(extraSolutionImages, solutionBox, "Solution Diagram");
+            }
 
             solutionBtn.addEventListener("click", () => {
               const isVisible = solutionBox.classList.contains("visible");
               solutionBox.classList.toggle("visible", !isVisible);
-              solutionBtn.textContent = isVisible ? "Show solution" : "Hide solution";
+              solutionBtn.textContent = isVisible ? "Show solution / work" : "Hide solution / work";
             });
 
             actions.appendChild(solutionBtn);
@@ -561,6 +713,7 @@
             state.problems = await response.json();
             buildTopics();
             buildCategories();
+            buildSourceItems();
             populateMenu(topicMenu, state.topics, state.currentTopic, (topic) => {
               state.currentTopic = topic;
               topicLabel.textContent = topic;
@@ -570,9 +723,29 @@
             populateMenu(categoryMenu, state.categories, state.currentCategory, (category) => {
               state.currentCategory = category;
               categoryLabel.textContent = category;
+              state.currentSourceItem = "All";
+              sourceItemLabel.textContent = "All";
+              buildSourceItems();
+              populateMenu(sourceItemMenu, state.sourceItems, state.currentSourceItem, (sourceItem) => {
+                state.currentSourceItem = sourceItem;
+                sourceItemLabel.textContent = sourceItem;
+                closeDropdown(sourceItemDropdown, sourceItemButton, sourceItemMenu);
+                renderProblems();
+              });
               closeDropdown(categoryDropdown, categoryButton, categoryMenu);
               renderProblems();
             });
+            populateMenu(
+              sourceItemMenu,
+              state.sourceItems,
+              state.currentSourceItem,
+              (sourceItem) => {
+                state.currentSourceItem = sourceItem;
+                sourceItemLabel.textContent = sourceItem;
+                closeDropdown(sourceItemDropdown, sourceItemButton, sourceItemMenu);
+                renderProblems();
+              }
+            );
             renderProblems();
           } catch (error) {
             console.error("Failed to load problems.json", error);
@@ -592,10 +765,18 @@
         categoryButton.addEventListener("click", (event) =>
           toggleDropdown(event, categoryDropdown, categoryButton, categoryMenu)
         );
+        sourceItemButton.addEventListener("click", (event) =>
+          toggleDropdown(event, sourceItemDropdown, sourceItemButton, sourceItemMenu)
+        );
         document.addEventListener("click", (event) => {
-          if (!dropdownEl.contains(event.target) && !categoryDropdown.contains(event.target)) {
+          if (
+            !dropdownEl.contains(event.target) &&
+            !categoryDropdown.contains(event.target) &&
+            !sourceItemDropdown.contains(event.target)
+          ) {
             closeDropdown(dropdownEl, topicButton, topicMenu);
             closeDropdown(categoryDropdown, categoryButton, categoryMenu);
+            closeDropdown(sourceItemDropdown, sourceItemButton, sourceItemMenu);
           }
         });
 
